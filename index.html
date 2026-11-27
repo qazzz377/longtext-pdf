@@ -2,103 +2,41 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="pdf">
 <meta name="theme-color" content="#ffffff">
-<link rel="icon" type="image/png" href="./apple-touch-icon.png">
-<link rel="apple-touch-icon" href="./apple-touch-icon.png">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png?v=3">
+<link rel="icon" type="image/png" href="./apple-touch-icon.png?v=3">
 <title>pdf</title>
-
 <style>
-* {
-  box-sizing: border-box;
-}
-body {
-  margin: 0;
-  padding: 24px 18px;
-  background: #fff;
-  color: #111;
-  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
-}
-h1 {
-  font-size: 23px;
-  margin: 10px 0 8px;
-}
-p {
-  color: #666;
-  font-size: 14px;
-  line-height: 1.6;
-}
-textarea {
-  display: block;
-  width: 100%;
-  min-height: 55vh;
-  padding: 15px;
-  border: 1px solid #ccc;
-  border-radius: 10px;
-  font-size: 16px;
-  line-height: 1.8;
-  resize: vertical;
-}
-button {
-  width: 100%;
-  margin-top: 16px;
-  padding: 17px;
-  border: 0;
-  border-radius: 10px;
-  background: #111;
-  color: white;
-  font-size: 17px;
-  font-weight: bold;
-}
-#paper {
-  display: none;
-}
-@media print {
-  body {
-    padding: 0;
-    margin: 0;
-  }
-  h1, p, textarea, button {
-    display: none !important;
-  }
-  #paper {
-    display: block !important;
-    white-space: pre-wrap;
-    overflow-wrap: break-word;
-    font-size: 11pt;
-    line-height: 1.8;
-    font-family: -apple-system, sans-serif;
-  }
-  @page {
-    size: A4;
-    margin: 20mm;
-  }
+*{box-sizing:border-box}
+body{margin:0;padding:24px 18px;background:#fff;color:#111;font-family:-apple-system,BlinkMacSystemFont,sans-serif}
+h1{font-size:23px;margin:10px 0 8px}
+p{color:#666;font-size:14px;line-height:1.6}
+textarea{display:block;width:100%;min-height:55vh;padding:15px;border:1px solid #ccc;border-radius:10px;font-size:16px;line-height:1.8;resize:vertical}
+button{width:100%;margin-top:16px;padding:17px;border:0;border-radius:10px;background:#111;color:white;font-size:17px;font-weight:bold}
+#paper{display:none}
+@media print{
+body{padding:0;margin:0}
+h1,p,textarea,button{display:none!important}
+#paper{display:block!important;white-space:pre-wrap;overflow-wrap:break-word;font-size:11pt;line-height:1.8;font-family:-apple-system,sans-serif}
+@page{size:A4;margin:20mm}
 }
 </style>
 </head>
-
 <body>
 <h1>pdf</h1>
 <p>文章を貼り付けて、PDFを作成できます。</p>
-
 <textarea id="input" placeholder="ここに長い文章を貼り付けてください"></textarea>
-
 <button onclick="makePDF()">PDFを作成</button>
-
 <div id="paper"></div>
-
 <script>
-function makePDF() {
-  const text = document.getElementById("input").value;
-
-  if (!text.trim()) {
-    alert("文章を入力してください。");
-    return;
-  }
-
-  document.getElementById("paper").textContent = text;
-  window.print();
+function makePDF(){
+const text=document.getElementById("input").value;
+if(!text.trim()){alert("文章を入力してください。");return;}
+document.getElementById("paper").textContent=text;
+window.print();
 }
 </script>
 </body>
