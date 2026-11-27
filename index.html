@@ -1,34 +1,105 @@
-<!doctype html>
-<link rel="icon" type="image/svg+xml" href="./icon.svg">
-<link rel="apple-touch-icon" href="./icon.svg"><html lang="ja">
+<!DOCTYPE html>
+<html lang="ja">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#f7f7f5">
-<link rel="manifest" href="manifest.webmanifest">
-<link rel="apple-touch-icon" href="icon.svg">
-<title>長文PDFメーカー</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="apple-mobile-web-app-title" content="pdf">
+<meta name="theme-color" content="#ffffff">
+<link rel="icon" type="image/png" href="./apple-touch-icon.png">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png">
+<title>pdf</title>
+
 <style>
-:root{color-scheme:light}*{box-sizing:border-box}body{margin:0;background:#f7f7f5;color:#202020;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Sans","Noto Sans JP",sans-serif;padding:calc(24px + env(safe-area-inset-top)) 18px calc(24px + env(safe-area-inset-bottom));}.wrap{max-width:720px;margin:0 auto}h1{font-size:25px;margin:8px 0 6px}p{color:#666;font-size:14px;line-height:1.65}.label{display:block;font-size:14px;font-weight:650;margin:24px 0 9px}textarea{display:block;width:100%;min-height:48vh;resize:vertical;border:1px solid #d8d8d4;border-radius:14px;background:white;padding:15px;font:16px/1.8 -apple-system,BlinkMacSystemFont,"Hiragino Sans",sans-serif;color:#202020;outline:none}textarea:focus{border-color:#777}.count{font-size:12px;color:#777;text-align:right;margin-top:7px}.button{width:100%;border:0;border-radius:13px;background:#202020;color:white;font-size:16px;font-weight:650;padding:16px;margin-top:20px}.hint{font-size:12px;color:#777;margin-top:14px}.print-title{display:none}
-@media print{ @page{size:A4;margin:18mm 17mm} body{padding:0;background:white;color:#000}.wrap>*:not(.print-area){display:none!important}.print-title{display:block;font-size:18px;font-weight:700;margin:0 0 12mm;white-space:pre-wrap}.print-area{display:block!important;white-space:pre-wrap;overflow-wrap:anywhere;font-family:"Hiragino Mincho ProN","Yu Mincho",serif;font-size:11pt;line-height:1.9;color:#000}.wrap{max-width:none;margin:0} }
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  padding: 24px 18px;
+  background: #fff;
+  color: #111;
+  font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+}
+h1 {
+  font-size: 23px;
+  margin: 10px 0 8px;
+}
+p {
+  color: #666;
+  font-size: 14px;
+  line-height: 1.6;
+}
+textarea {
+  display: block;
+  width: 100%;
+  min-height: 55vh;
+  padding: 15px;
+  border: 1px solid #ccc;
+  border-radius: 10px;
+  font-size: 16px;
+  line-height: 1.8;
+  resize: vertical;
+}
+button {
+  width: 100%;
+  margin-top: 16px;
+  padding: 17px;
+  border: 0;
+  border-radius: 10px;
+  background: #111;
+  color: white;
+  font-size: 17px;
+  font-weight: bold;
+}
+#paper {
+  display: none;
+}
+@media print {
+  body {
+    padding: 0;
+    margin: 0;
+  }
+  h1, p, textarea, button {
+    display: none !important;
+  }
+  #paper {
+    display: block !important;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    font-size: 11pt;
+    line-height: 1.8;
+    font-family: -apple-system, sans-serif;
+  }
+  @page {
+    size: A4;
+    margin: 20mm;
+  }
+}
 </style>
 </head>
+
 <body>
-<main class="wrap">
-<h1>長文PDFメーカー</h1>
-<p>文章を貼り付けてPDFにできます。入力内容はこの画面内だけで処理され、外部サーバーには送信されません。</p>
-<label class="label" for="bodyText">PDFにしたい文章</label>
-<textarea id="bodyText" placeholder="ここに文章を貼り付けてください。改行もそのまま反映されます。" spellcheck="false"></textarea>
-<div class="count" id="count">0文字</div>
-<button class="button" id="make">PDFを作る</button>
-<p class="hint">ボタンを押すと印刷画面が開きます。iPhoneでは印刷プレビューを拡大表示し、共有ボタンから「ファイルに保存」またはSessionへの共有を選べます。保存先は自分で選択できます。</p>
-<div class="print-title">文章</div><div class="print-area" id="printArea"></div>
-</main>
+<h1>pdf</h1>
+<p>文章を貼り付けて、PDFを作成できます。</p>
+
+<textarea id="input" placeholder="ここに長い文章を貼り付けてください"></textarea>
+
+<button onclick="makePDF()">PDFを作成</button>
+
+<div id="paper"></div>
+
 <script>
-if ('serviceWorker' in navigator) { window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(()=>{})); }
-const input=document.getElementById('bodyText');const count=document.getElementById('count');const area=document.getElementById('printArea');
-input.addEventListener('input',()=>{count.textContent=input.value.length.toLocaleString('ja-JP')+'文字'});
-document.getElementById('make').addEventListener('click',()=>{if(!input.value.trim()){alert('先に文章を貼り付けてください。');return}area.textContent=input.value;window.print()});
+function makePDF() {
+  const text = document.getElementById("input").value;
+
+  if (!text.trim()) {
+    alert("文章を入力してください。");
+    return;
+  }
+
+  document.getElementById("paper").textContent = text;
+  window.print();
+}
 </script>
 </body>
 </html>
