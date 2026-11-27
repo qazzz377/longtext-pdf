@@ -11,7 +11,7 @@
 body{margin:0;padding:24px 18px;font-family:-apple-system,sans-serif;background:#fff;color:#111}
 h1{font-size:25px;margin:12px 0 22px}
 textarea{width:100%;height:55vh;padding:15px;border:1px solid #ccc;border-radius:12px;font-size:16px;line-height:1.7}
-button{width:100%;padding:16px;margin-top:14px;border:0;border-radius:12px;background:#111;color:#fff;font-size:16px;font-weight:600}
+button{width:100%;padding:16px;margin-top:14px;border:0;border-radius:12px;background:#111;color:white;font-size:16px;font-weight:600}
 button:disabled{opacity:.45}
 #status{margin:16px 0;font-size:14px;line-height:1.6}
 input{width:100%;padding:13px;border:1px solid #ccc;border-radius:10px;font-size:13px}
@@ -32,16 +32,191 @@ const urlField=document.getElementById("url");
 const createButton=document.getElementById("create");
 const copyButton=document.getElementById("copy");
 
-function escapeHTML(text){
-  return text.replace(/[&<>"']/g,function(c){
-    return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c];
-  });
+const W=1240;
+const MARGIN=80;
+const MAX_HEIGHT=29500;
+const STRIP_HEIGHT=2500;
+const SCALE=595/W;
+
+function layoutText(text,fontSize){
+  const canvas=document.createElement("canvas");
+  const ctx=canvas.getContext("2d");
+  ctx.font=fontSize+"px sans-serif";
+
+  const lineHeight=Math.ceil(fontSize*1.55);
+  const lines=[];
+
+  for(const paragraph of text.replace(/\r/g,"").split("\n")){
+    if(paragraph===""){
+      lines.push("");
+      continue;
+    }
+
+    let line="";
+    for(const char of Array.from(paragraph)){
+      const next=line+char;
+      if(ctx.measureText(next).width>W-MARGIN*2 && line){
+        lines.push(line);
+        line=char;
+      }else{
+        line=next;
+      }
+    }
+    lines.push(line);
+  }
+
+  const height=MARGIN*2+lines.length*lineHeight;
+  return {lines,fontSize,lineHeight,height};
+}
+
+function makeImageBytes(canvas){
+  const data=canvas.toDataURL("image/jpeg",0.88);
+  const binary=atob(data.split(",")[1]);
+  const bytes=new Uint8Array(binary.length);
+  for(let i=0;i<binary.length;i++){
+    bytes[i]=binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+function makeStrips(layout){
+  const strips=[];
+  const {lines,fontSize,lineHeight,height}=layout;
+
+  for(let start=0;start<height;start+=STRIP_HEIGHT){
+    const h=Math.min(STRIP_HEIGHT,height-start);
+    const canvas=document.createElement("canvas");
+    canvas.width=W;
+    canvas.height=h;
+
+    const ctx=canvas.getContext("2d");
+    ctx.fillStyle="#fff";
+    ctx.fillRect(0,0,W,h);
+    ctx.fillStyle="#111";
+    ctx.font=fontSize+"px sans-serif";
+    ctx.textBaseline="top";
+
+    const first=Math.max(0,Math.floor((start-MARGIN)/lineHeight));
+    const last=Math.min(lines.length,Math.ceil((start+h-MARGIN)/lineHeight));
+
+    for(let i=first;i<last;i++){
+      const y=MARGIN+i*lineHeight-start;
+      ctx.fillText(lines[i],MARGIN,y);
+    }
+
+    strips.push({
+      bytes:makeImageBytes(canvas),
+      height:h,
+      start
+    });
+  }
+
+  return strips;
+}
+
+function ascii(s){
+  return new TextEncoder().encode(s);
+}
+
+function join(parts){
+  let total=0;
+  for(const p of parts)total+=p.length;
+  const out=new Uint8Array(total);
+  let offset=0;
+  for(const p of parts){
+    out.set(p,offset);
+    offset+=p.length;
+  }
+  return out;
+}
+
+function buildPDF(strips,totalHeight){
+  const objects=[];
+  const imageStart=5;
+  const imageRefs=strips.map((_,i)=>(imageStart+i)+" 0 R");
+
+  objects[1]=ascii("<< /Type /Catalog /Pages 2 0 R >>");
+  objects[2]=ascii("<< /Type /Pages /Kids [3 0 R] /Count 1 >>");
+
+  let commands="";
+
+  for(let i=0;i<strips.length;i++){
+    const strip=strips[i];
+    const imageHeight=strip.height*SCALE;
+    const bottom=(totalHeight-strip.start-strip.height)*SCALE;
+
+    commands+=
+      "q\n"+
+      "595 0 0 "+imageHeight+" 0 "+bottom+" cm\n"+
+      "/Im"+i+" Do\n"+
+      "Q\n";
+
+    const imageObject=imageStart+i;
+
+    objects[imageObject]=join([
+      ascii(
+        "<< /Type /XObject /Subtype /Image "+
+        "/Width "+W+" /Height "+strip.height+" "+
+        "/ColorSpace /DeviceRGB /BitsPerComponent 8 "+
+        "/Filter /DCTDecode /Length "+strip.bytes.length+
+        " >>\nstream\n"
+      ),
+      strip.bytes,
+      ascii("\nendstream")
+    ]);
+  }
+
+  const resources=strips.map((_,i)=>"/Im"+i+" "+imageStart+i+" 0 R").join(" ");
+
+  objects[3]=ascii(
+    "<< /Type /Page /Parent 2 0 R "+
+    "/MediaBox [0 0 595 "+(totalHeight*SCALE)+"] "+
+    "/Resources << /XObject << "+resources+" >> >> "+
+    "/Contents 4 0 R >>"
+  );
+
+  const content=ascii(commands);
+  objects[4]=join([
+    ascii("<< /Length "+content.length+" >>\nstream\n"),
+    content,
+    ascii("endstream")
+  ]);
+
+  const parts=[ascii("%PDF-1.4\n")];
+  const offsets=[0];
+  let position=parts[0].length;
+
+  for(let i=1;i<objects.length;i++){
+    offsets[i]=position;
+    const obj=join([
+      ascii(i+" 0 obj\n"),
+      objects[i],
+      ascii("\nendobj\n")
+    ]);
+    parts.push(obj);
+    position+=obj.length;
+  }
+
+  const xrefPosition=position;
+  let xref="xref\n0 "+objects.length+"\n";
+  xref+="0000000000 65535 f \n";
+
+  for(let i=1;i<objects.length;i++){
+    xref+=String(offsets[i]).padStart(10,"0")+" 00000 n \n";
+  }
+
+  xref+=
+    "trailer\n<< /Size "+objects.length+" /Root 1 0 R >>\n"+
+    "startxref\n"+xrefPosition+"\n%%EOF";
+
+  parts.push(ascii(xref));
+  return new Blob([join(parts)],{type:"application/pdf"});
 }
 
 async function createPDF(){
-  const text=input.value.trim();
-  if(!text){
-    statusBox.textContent="先に文章を貼り付けてください。";
+  const text=input.value;
+  if(!text.trim()){
+    statusBox.textContent="文章を入力してください。";
     return;
   }
 
@@ -50,44 +225,42 @@ async function createPDF(){
   urlField.value="";
 
   try{
-    statusBox.textContent="PDFを作成しています……";
+    statusBox.textContent="文章を整えています……";
 
-    const html=`<!DOCTYPE html>
-<html lang="ja">
-<head>
-<meta charset="UTF-8">
-<style>
-@page{size:A4;margin:22mm 20mm}
-body{font-family:"Noto Sans CJK JP",sans-serif;font-size:11pt;line-height:1.9;color:#111;overflow-wrap:break-word}
-.text{white-space:pre-wrap;overflow-wrap:anywhere}
-</style>
-</head>
-<body><div class="text">${escapeHTML(text)}</div></body>
-</html>`;
+    let layout=null;
+
+    for(const size of [28,26,24,22,20,18,16,14]){
+      const candidate=layoutText(text,size);
+      if(candidate.height<=MAX_HEIGHT){
+        layout=candidate;
+        break;
+      }
+    }
+
+    if(!layout){
+      throw new Error("PDFの1ページに収まる上限を超えました。");
+    }
+
+    statusBox.textContent="1ページのPDFを作成しています……";
+
+    const strips=makeStrips(layout);
+    const blob=buildPDF(strips,layout.height);
+
+    statusBox.textContent="PDFをアップロードしています……";
 
     const response=await fetch(
-      "https://aisenseapi.com/services/v1/html2pdf",
+      "https://aisenseapi.com/services/v1/storage",
       {
         method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({
-          data:html,
-          options:{
-            "page-size":"A4",
-            orientation:"Portrait",
-            "margin-top":"20mm",
-            "margin-bottom":"20mm",
-            "margin-left":"20mm",
-            "margin-right":"20mm"
-          }
-        })
+        headers:{"Content-Type":"application/pdf"},
+        body:blob
       }
     );
 
     const result=await response.json();
 
     if(!response.ok || !result.storage_url){
-      throw new Error(result.error || "PDF作成に失敗しました");
+      throw new Error(result.error || "アップロードに失敗しました");
     }
 
     const viewerURL=
@@ -97,7 +270,8 @@ body{font-family:"Noto Sans CJK JP",sans-serif;font-size:11pt;line-height:1.9;co
 
     urlField.value=viewerURL;
     copyButton.disabled=false;
-    statusBox.textContent="完成しました。閲覧用URLをコピーできます。";
+    statusBox.textContent=
+      "完成しました。1ページの縦長PDFです。URLをコピーできます。";
 
   }catch(error){
     statusBox.textContent="エラー："+error.message;
@@ -108,6 +282,7 @@ body{font-family:"Noto Sans CJK JP",sans-serif;font-size:11pt;line-height:1.9;co
 
 async function copyURL(){
   if(!urlField.value)return;
+
   try{
     await navigator.clipboard.writeText(urlField.value);
     statusBox.textContent="URLをコピーしました。";
