@@ -6,8 +6,8 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="pdf">
 <meta name="theme-color" content="#ffffff">
-<link rel="apple-touch-icon" href="./apple-touch-icon.png?v=7">
-<link rel="icon" type="image/png" href="./apple-touch-icon.png?v=7">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png?v=8">
+<link rel="icon" type="image/png" href="./apple-touch-icon.png?v=8">
 <title>pdf</title>
 
 <style>
@@ -60,15 +60,150 @@ button:disabled{opacity:.4}
 <button id="create" onclick="createPDF()">PDFを作成</button>
 <button id="share" onclick="sharePDF()">PDFを共有する</button>
 
-<div id="status">PDF機能を読み込んでいます……</div>
-
-<script src="https://unpkg.com/jspdf@2.5.2/dist/jspdf.umd.min.js"
-onload="document.getElementById('status').textContent='準備完了。文章を貼り付けてください。'"
-onerror="document.getElementById('status').textContent='PDF機能を読み込めません。通信を確認してください。'">
-</script>
+<div id="status">準備完了。文章を貼り付けてください。</div>
 
 <script>
 let pdfFile=null;
+
+function makeCanvas(){
+  const canvas=document.createElement("canvas");
+  canvas.width=1240;
+  canvas.height=1754;
+
+  const ctx=canvas.getContext("2d");
+
+  ctx.fillStyle="#ffffff";
+  ctx.fillRect(0,0,1240,1754);
+
+  ctx.fillStyle="#111111";
+  ctx.font="30px -apple-system, BlinkMacSystemFont, 'Hiragino Kaku Gothic ProN', sans-serif";
+  ctx.textBaseline="top";
+
+  return {canvas,ctx,y:100};
+}
+
+function canvasToJpeg(canvas){
+  const data=canvas.toDataURL("image/jpeg",0.88);
+  const binary=atob(data.split(",")[1]);
+  const bytes=new Uint8Array(binary.length);
+
+  for(let i=0;i<binary.length;i++){
+    bytes[i]=binary.charCodeAt(i);
+  }
+
+  return bytes;
+}
+
+function buildPDF(images){
+
+  const encoder=new TextEncoder();
+  const parts=[];
+  const offsets=[0];
+  let position=0;
+
+  function addText(text){
+    const bytes=encoder.encode(text);
+    parts.push(bytes);
+    position+=bytes.length;
+  }
+
+  function addBytes(bytes){
+    parts.push(bytes);
+    position+=bytes.length;
+  }
+
+  const pageCount=images.length;
+  const objectCount=2+pageCount*3;
+
+  addText("%PDF-1.4\n");
+
+  function addObject(id,body){
+    offsets[id]=position;
+    addText(id+" 0 obj\n");
+    addText(body);
+    addText("\nendobj\n");
+  }
+
+  addObject(1,"<< /Type /Catalog /Pages 2 0 R >>");
+
+  let kids="";
+
+  for(let i=0;i<pageCount;i++){
+    const pageId=3+i*3;
+    kids+=pageId+" 0 R ";
+  }
+
+  addObject(
+    2,
+    "<< /Type /Pages /Kids ["+kids+"] /Count "+pageCount+" >>"
+  );
+
+  for(let i=0;i<pageCount;i++){
+
+    const pageId=3+i*3;
+    const imageId=pageId+1;
+    const contentId=pageId+2;
+
+    addObject(
+      pageId,
+      "<< /Type /Page /Parent 2 0 R "+
+      "/MediaBox [0 0 595.28 841.89] "+
+      "/Resources << /ProcSet [/PDF /ImageC] "+
+      "/XObject << /Im0 "+imageId+" 0 R >> >> "+
+      "/Contents "+contentId+" 0 R >>"
+    );
+
+    const jpeg=images[i];
+
+    offsets[imageId]=position;
+
+    addText(imageId+" 0 obj\n");
+    addText(
+      "<< /Type /XObject /Subtype /Image "+
+      "/Width 1240 /Height 1754 "+
+      "/ColorSpace /DeviceRGB /BitsPerComponent 8 "+
+      "/Filter /DCTDecode /Length "+jpeg.length+" >>\n"
+    );
+
+    addText("stream\n");
+    addBytes(jpeg);
+    addText("\nendstream\nendobj\n");
+
+    const content=
+      "q\n595.28 0 0 841.89 0 0 cm\n/Im0 Do\nQ\n";
+
+    const contentBytes=encoder.encode(content);
+
+    offsets[contentId]=position;
+
+    addText(contentId+" 0 obj\n");
+    addText("<< /Length "+contentBytes.length+" >>\n");
+    addText("stream\n");
+    addBytes(contentBytes);
+    addText("endstream\nendobj\n");
+  }
+
+  const xrefPosition=position;
+
+  addText("xref\n0 "+(objectCount+1)+"\n");
+  addText("0000000000 65535 f \n");
+
+  for(let i=1;i<=objectCount;i++){
+    addText(
+      String(offsets[i]).padStart(10,"0")+
+      " 00000 n \n"
+    );
+  }
+
+  addText(
+    "trailer\n<< /Size "+(objectCount+1)+
+    " /Root 1 0 R >>\n"
+  );
+
+  addText("startxref\n"+xrefPosition+"\n%%EOF");
+
+  return new Blob(parts,{type:"application/pdf"});
+}
 
 async function createPDF(){
 
@@ -82,91 +217,39 @@ async function createPDF(){
     return;
   }
 
-  if(!window.jspdf){
-    alert("PDF機能を読み込めません。通信を確認してください。");
-    return;
-  }
-
   button.disabled=true;
   shareButton.style.display="none";
   pdfFile=null;
-  status.textContent="PDFを作成しています……";
 
   try{
 
-    const {jsPDF}=window.jspdf;
+    status.textContent="PDFを作成しています……";
 
-    const pdf=new jsPDF({
-      orientation:"portrait",
-      unit:"mm",
-      format:"a4",
-      compress:true
-    });
+    const images=[];
+    let page=makeCanvas();
 
-    const W=1240;
-    const H=1754;
-    const margin=110;
-    const lineHeight=52;
-    const maxWidth=W-margin*2;
+    const margin=100;
+    const maxWidth=1040;
+    const lineHeight=48;
+    const bottom=1650;
 
-    const canvas=document.createElement("canvas");
-    canvas.width=W;
-    canvas.height=H;
-
-    const ctx=canvas.getContext("2d");
-
-    let y=margin;
-    let pageCount=0;
-
-    function startPage(){
-
-      ctx.fillStyle="#ffffff";
-      ctx.fillRect(0,0,W,H);
-
-      ctx.fillStyle="#111111";
-      ctx.font="30px -apple-system, BlinkMacSystemFont, 'Hiragino Kaku Gothic ProN', sans-serif";
-      ctx.textBaseline="top";
-
-      y=margin;
-    }
-
-    function finishPage(){
-
-      const image=canvas.toDataURL("image/jpeg",0.94);
-
-      if(pageCount>0){
-        pdf.addPage();
-      }
-
-      pdf.addImage(
-        image,
-        "JPEG",
-        0,
-        0,
-        210,
-        297,
-        undefined,
-        "FAST"
-      );
-
-      pageCount++;
+    function savePage(){
+      images.push(canvasToJpeg(page.canvas));
     }
 
     function addLine(line){
 
-      if(y+lineHeight>H-margin){
-        finishPage();
-        startPage();
+      if(page.y+lineHeight>bottom){
+        savePage();
+        page=makeCanvas();
       }
 
       if(line!==""){
-        ctx.fillText(line,margin,y);
+        page.ctx.fillText(line,margin,page.y);
       }
 
-      y+=lineHeight;
+      page.y+=lineHeight;
     }
-
-    startPage();
 
     const paragraphs=text
       .replace(/\r\n/g,"\n")
@@ -186,7 +269,10 @@ async function createPDF(){
 
         const test=line+char;
 
-        if(ctx.measureText(test).width>maxWidth && line!==""){
+        if(
+          page.ctx.measureText(test).width>maxWidth &&
+          line!==""
+        ){
           addLine(line);
           line=char;
         }else{
@@ -199,9 +285,11 @@ async function createPDF(){
       }
     }
 
-    finishPage();
+    savePage();
 
-    const blob=pdf.output("blob");
+    status.textContent="PDFファイルを組み立てています……";
+
+    const blob=buildPDF(images);
 
     pdfFile=new File(
       [blob],
@@ -212,14 +300,14 @@ async function createPDF(){
     shareButton.style.display="block";
 
     status.textContent=
-      "PDFが完成しました。全"+pageCount+"ページです。";
+      "PDFが完成しました。全"+images.length+"ページです。";
 
   }catch(error){
 
     console.error(error);
 
     status.textContent=
-      "PDFを作成できませんでした。もう一度お試しください。";
+      "作成エラー："+(error.message||"原因不明");
 
   }finally{
 
@@ -271,10 +359,8 @@ async function sharePDF(){
   }catch(error){
 
     if(error.name!=="AbortError"){
-
       document.getElementById("status").textContent=
-        "共有できませんでした。もう一度お試しください。";
-
+        "共有エラー："+(error.message||"もう一度お試しください。");
     }
   }
 }
