@@ -50,106 +50,149 @@ const statusBox=document.getElementById("status");
 const urlField=document.getElementById("url");
 const copyButton=document.getElementById("copy");
 function escapeHTML(text){
-return text.replace(/[&<>"']/g,c=>({
-"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
-})[c]);
+  return text.replace(/[&<>"']/g,c=>({
+    "&":"&amp;",
+    "<":"&lt;",
+    ">":"&gt;",
+    '"':"&quot;",
+    "'":"&#039;"
+  })[c]);
+}
+function makePages(text){
+  const chars=Array.from(text);
+  const pages=[];
+  const pageSize=700;
+  for(let i=0;i<chars.length;i+=pageSize){
+    pages.push(chars.slice(i,i+pageSize).join(""));
+  }
+  return pages.map(page=>
+    `<section class="sheet"><div class="text">${escapeHTML(page)}</div></section>`
+  ).join("");
 }
 createButton.addEventListener("click",async()=>{
-const originalText=input.value;
-if(!originalText.trim()){
-statusBox.textContent="文章を入力してください。";
-return;
-}
-createButton.disabled=true;
-urlField.style.display="none";
-copyButton.style.display="none";
-copyButton.textContent="URLをコピー";
-try{
-statusBox.textContent="PDFを作成しています……";
-const escaped=escapeHTML(originalText);
-const paragraphs=escaped.split(/\r\n|\r|\n/).map(line=>
-line?`<p>${line}</p>`:`<p>&nbsp;</p>`
-).join("");
-const html=`<!DOCTYPE html>
+  const originalText=input.value;
+  if(!originalText.trim()){
+    statusBox.textContent="文章を入力してください。";
+    return;
+  }
+  createButton.disabled=true;
+  urlField.style.display="none";
+  copyButton.style.display="none";
+  copyButton.textContent="URLをコピー";
+  try{
+    statusBox.textContent="全文を複数ページのPDFに変換しています……";
+    const pages=makePages(originalText);
+    const html=`<!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
 <style>
-@page{size:A4;margin:18mm 17mm}
-html,body{margin:0;padding:0}
-body{
-font-family:sans-serif;
-font-size:11pt;
-line-height:1.85;
-color:#111;
+@page{
+  size:A4;
+  margin:18mm 17mm;
 }
-p{
-margin:0;
-padding:0;
-white-space:pre-wrap;
-overflow-wrap:anywhere;
-word-break:normal;
+html,body{
+  margin:0;
+  padding:0;
+}
+body{
+  font-family:sans-serif;
+  font-size:11pt;
+  line-height:1.85;
+  color:#111;
+}
+.sheet{
+  display:block;
+  page-break-after:always;
+  break-after:page;
+}
+.sheet:last-child{
+  page-break-after:auto;
+  break-after:auto;
+}
+.text{
+  white-space:pre-wrap;
+  overflow-wrap:anywhere;
+  word-break:normal;
 }
 </style>
 </head>
-<body>${paragraphs}</body>
+<body>
+${pages}
+</body>
 </html>`;
 const payload=JSON.stringify({
-data:html,
-options:{
-"page-size":"A4",
-"orientation":"Portrait",
-"margin-top":"18mm",
-"margin-bottom":"18mm",
-"margin-left":"17mm",
-"margin-right":"17mm"
-}
+  html:html,
+  options:{
+    "page-size":"A4",
+    "orientation":"Portrait",
+    "margin-top":"18mm",
+    "margin-bottom":"18mm",
+    "margin-left":"17mm",
+    "margin-right":"17mm"
+  }
 });
 const bytes=new TextEncoder().encode(payload).length;
 if(bytes>250000){
-throw new Error("送信上限を超えています。文章量を減らしてください。");
+  throw new Error("送信上限を超えています。文章量を減らしてください。");
 }
 const response=await fetch(
-"https://aisenseapi.com/services/v1/html2pdf",
-{
-method:"POST",
-headers:{"Content-Type":"application/json"},
-body:payload
-}
+  "https://aisenseapi.com/services/v1/html2pdf",
+  {
+    method:"POST",
+    headers:{
+      "Content-Type":"application/json"
+    },
+    body:payload
+  }
 );
 const responseText=await response.text();
 let result;
-try{result=JSON.parse(responseText)}
-catch{throw new Error("API応答エラー HTTP "+response.status)}
+try{
+  result=JSON.parse(responseText);
+}catch{
+  throw new Error("API応答エラー HTTP "+response.status);
+}
 if(!response.ok){
-throw new Error(result.error||result.message||"PDF生成失敗 HTTP "+response.status);
+  throw new Error(
+    result.error||result.message||"PDF生成失敗 HTTP "+response.status
+  );
 }
 if(!result.storage_url){
-throw new Error(result.error||result.message||"保存URLがありません。");
+  throw new Error(
+    result.error||result.message||"保存URLがありません。"
+  );
 }
-const viewerURL=location.origin+
-location.pathname.replace(/index\.html$/,"")+
-"viewer.html?url="+encodeURIComponent(result.storage_url);
+const viewerURL=
+  location.origin+
+  location.pathname.replace(/index\.html$/,"")+
+  "viewer.html?url="+
+  encodeURIComponent(result.storage_url);
 urlField.value=viewerURL;
 urlField.style.display="block";
 copyButton.style.display="block";
-statusBox.textContent="PDFを作成しました。入力文字数："+originalText.length+"文字／送信データ："+bytes+"バイト";
+statusBox.textContent=
+  "PDFを作成しました。"+
+  "入力文字数："+originalText.length+"文字／"+
+  "ページ分割："+pages.length+"ページ分／"+
+  "送信データ："+bytes+"バイト";
+
 }catch(error){
-statusBox.textContent="エラー："+error.message;
+statusBox.textContent=“エラー：”+error.message;
 }finally{
 createButton.disabled=false;
 }
 });
-copyButton.addEventListener("click",async()=>{
+
+copyButton.addEventListener(“click”,async()=>{
 try{
 await navigator.clipboard.writeText(urlField.value);
-copyButton.textContent="コピーしました";
+copyButton.textContent=“コピーしました”;
 }catch{
 urlField.select();
-document.execCommand("copy");
-copyButton.textContent="コピーしました";
+document.execCommand(“copy”);
+copyButton.textContent=“コピーしました”;
 }
 });
-</script>
 </body>
 </html>
