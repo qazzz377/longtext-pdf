@@ -2,317 +2,233 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="pdf">
-<meta name="theme-color" content="#ffffff">
-<link rel="apple-touch-icon" href="./apple-touch-icon.png?v=9">
-<link rel="icon" type="image/png" href="./apple-touch-icon.png?v=9">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <title>pdf</title>
-
 <style>
 *{box-sizing:border-box}
-body{
-  margin:0;
-  padding:24px 18px;
-  background:#fff;
-  color:#111;
-  font-family:-apple-system,BlinkMacSystemFont,sans-serif;
-}
-h1{font-size:25px;margin:8px 0}
-p{font-size:14px;color:#777;line-height:1.7}
-textarea{
-  display:block;
-  width:100%;
-  height:58vh;
-  padding:15px;
-  border:1px solid #ccc;
-  border-radius:12px;
-  font-size:16px;
-  line-height:1.8;
-  resize:vertical;
-}
-button{
-  display:block;
-  width:100%;
-  margin-top:14px;
-  padding:17px;
-  border:0;
-  border-radius:11px;
-  background:#111;
-  color:white;
-  font-size:16px;
-  font-weight:bold;
-}
-button:disabled{opacity:.4}
-#copy{display:none;background:#2878df}
-#url{
-  display:none;
-  width:100%;
-  padding:13px;
-  margin-top:15px;
-  border:1px solid #ccc;
-  border-radius:9px;
-  font-size:13px;
-}
-#status{font-size:13px;margin-top:15px;color:#555}
-.note{font-size:12px;color:#999}
+body{margin:0;padding:24px 18px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#111}
+h1{font-size:25px;margin:12px 0 22px}
+textarea{width:100%;height:55vh;padding:15px;border:1px solid #ccc;border-radius:12px;font-size:16px;line-height:1.7;resize:vertical}
+button{width:100%;padding:16px;margin-top:14px;border:0;border-radius:12px;background:#111;color:#fff;font-size:16px;font-weight:600}
+button:disabled{opacity:.45}
+#status{margin:16px 0;font-size:14px;line-height:1.6}
+#url{width:100%;padding:13px;border:1px solid #ccc;border-radius:10px;font-size:13px}
+.small{font-size:12px;color:#777;margin-top:12px}
 </style>
 </head>
-
 <body>
-
 <h1>pdf</h1>
-<p>文章を貼り付けてPDFにできます。日本語・長文・複数ページに対応しています。</p>
 
-<textarea id="input" placeholder="ここに長い文章を貼り付けてください"></textarea>
+<textarea id="input" placeholder="ここに長文を貼り付け"></textarea>
 
 <button id="create" onclick="createPDF()">PDFを作成してURL発行</button>
 
-<input id="url" readonly>
+<div id="status">文章を貼り付けてボタンを押してください。</div>
 
-<button id="copy" onclick="copyURL()">URLをコピー</button>
+<input id="url" type="text" readonly placeholder="発行されたURLがここに表示されます">
 
-<div id="status">準備完了。文章を貼り付けてください。</div>
-<p class="note">発行したURLは24時間有効です。URLを知っている人は誰でも閲覧できます。</p>
+<button id="copy" onclick="copyURL()" disabled>URLをコピー</button>
+
+<div class="small">PDFは一時保存されます。共有URLの取り扱いに注意してください。</div>
 
 <script>
-function makeCanvas(){
+const input=document.getElementById("input");
+const statusBox=document.getElementById("status");
+const urlField=document.getElementById("url");
+const createButton=document.getElementById("create");
+const copyButton=document.getElementById("copy");
 
+function setStatus(text){
+  statusBox.textContent=text;
+}
+
+function makePages(text){
   const canvas=document.createElement("canvas");
   canvas.width=1240;
   canvas.height=1754;
-
   const ctx=canvas.getContext("2d");
+  ctx.font='30px -apple-system, BlinkMacSystemFont, sans-serif';
 
-  ctx.fillStyle="#ffffff";
-  ctx.fillRect(0,0,1240,1754);
+  const paragraphs=text.replace(/\r/g,"").split("\n");
+  const lines=[];
 
-  ctx.fillStyle="#111111";
-  ctx.font="30px -apple-system, BlinkMacSystemFont, 'Hiragino Kaku Gothic ProN', sans-serif";
-  ctx.textBaseline="top";
+  for(const paragraph of paragraphs){
+    if(paragraph===""){
+      lines.push("");
+      continue;
+    }
+    let line="";
+    for(const char of paragraph){
+      const next=line+char;
+      if(ctx.measureText(next).width>1080 && line){
+        lines.push(line);
+        line=char;
+      }else{
+        line=next;
+      }
+    }
+    lines.push(line);
+  }
 
-  return {canvas,ctx,y:100};
+  const pages=[];
+  const linesPerPage=39;
+  for(let i=0;i<lines.length;i+=linesPerPage){
+    pages.push(lines.slice(i,i+linesPerPage));
+  }
+  return pages.length?pages:[[""]];
 }
 
 function canvasToJpeg(canvas){
-
   const data=canvas.toDataURL("image/jpeg",0.88);
   const binary=atob(data.split(",")[1]);
   const bytes=new Uint8Array(binary.length);
-
-  for(let i=0;i<binary.length;i++){
-    bytes[i]=binary.charCodeAt(i);
-  }
-
+  for(let i=0;i<binary.length;i++)bytes[i]=binary.charCodeAt(i);
   return bytes;
 }
 
+function makeImagePages(pageLines){
+  const images=[];
+  for(const lines of pageLines){
+    const canvas=document.createElement("canvas");
+    canvas.width=1240;
+    canvas.height=1754;
+    const ctx=canvas.getContext("2d");
+
+    ctx.fillStyle="#ffffff";
+    ctx.fillRect(0,0,1240,1754);
+    ctx.fillStyle="#111111";
+    ctx.font='30px -apple-system, BlinkMacSystemFont, sans-serif';
+    ctx.textBaseline="top";
+
+    let y=100;
+    for(const line of lines){
+      ctx.fillText(line,80,y);
+      y+=40;
+    }
+    images.push(canvasToJpeg(canvas));
+  }
+  return images;
+}
+
+function joinBytes(parts){
+  let length=0;
+  for(const p of parts)length+=p.length;
+  const result=new Uint8Array(length);
+  let offset=0;
+  for(const p of parts){
+    result.set(p,offset);
+    offset+=p.length;
+  }
+  return result;
+}
+
+function ascii(text){
+  return new TextEncoder().encode(text);
+}
+
 function buildPDF(images){
-
-  const encoder=new TextEncoder();
-  const parts=[];
-  const offsets=[0];
-  let position=0;
-
-  function addText(text){
-    const bytes=encoder.encode(text);
-    parts.push(bytes);
-    position+=bytes.length;
-  }
-
-  function addBytes(bytes){
-    parts.push(bytes);
-    position+=bytes.length;
-  }
-
+  const objects=[];
+  const pageRefs=[];
   const pageCount=images.length;
-  const objectCount=2+pageCount*3;
 
-  addText("%PDF-1.4\n");
-
-  function addObject(id,body){
-    offsets[id]=position;
-    addText(id+" 0 obj\n");
-    addText(body);
-    addText("\nendobj\n");
-  }
-
-  addObject(1,"<< /Type /Catalog /Pages 2 0 R >>");
-
-  let kids="";
+  objects[1]=ascii("<< /Type /Catalog /Pages 2 0 R >>");
 
   for(let i=0;i<pageCount;i++){
-    kids+=(3+i*3)+" 0 R ";
+    const pageObj=3+i*3;
+    const contentObj=pageObj+1;
+    const imageObj=pageObj+2;
+    pageRefs.push(pageObj+" 0 R");
+
+    const pageContent=
+      "q\n595 0 0 842 0 0 cm\n/Im0 Do\nQ\n";
+    const contentBytes=ascii(pageContent);
+
+    objects[pageObj]=ascii(
+      "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] "+
+      "/Resources << /XObject << /Im0 "+imageObj+" 0 R >> >> "+
+      "/Contents "+contentObj+" 0 R >>"
+    );
+
+    objects[contentObj]=joinBytes([
+      ascii("<< /Length "+contentBytes.length+" >>\nstream\n"),
+      contentBytes,
+      ascii("endstream")
+    ]);
+
+    const jpg=images[i];
+    objects[imageObj]=joinBytes([
+      ascii(
+        "<< /Type /XObject /Subtype /Image /Width 1240 /Height 1754 "+
+        "/ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode "+
+        "/Length "+jpg.length+" >>\nstream\n"
+      ),
+      jpg,
+      ascii("\nendstream")
+    ]);
   }
 
-  addObject(
-    2,
-    "<< /Type /Pages /Kids ["+kids+"] /Count "+pageCount+" >>"
+  objects[2]=ascii(
+    "<< /Type /Pages /Kids ["+pageRefs.join(" ")+"] /Count "+pageCount+" >>"
   );
 
-  for(let i=0;i<pageCount;i++){
+  const parts=[ascii("%PDF-1.4\n")];
+  const offsets=[0];
+  let position=parts[0].length;
 
-    const pageId=3+i*3;
-    const imageId=pageId+1;
-    const contentId=pageId+2;
-
-    addObject(
-      pageId,
-      "<< /Type /Page /Parent 2 0 R "+
-      "/MediaBox [0 0 595.28 841.89] "+
-      "/Resources << /ProcSet [/PDF /ImageC] "+
-      "/XObject << /Im0 "+imageId+" 0 R >> >> "+
-      "/Contents "+contentId+" 0 R >>"
-    );
-
-    const jpeg=images[i];
-
-    offsets[imageId]=position;
-
-    addText(imageId+" 0 obj\n");
-    addText(
-      "<< /Type /XObject /Subtype /Image "+
-      "/Width 1240 /Height 1754 "+
-      "/ColorSpace /DeviceRGB /BitsPerComponent 8 "+
-      "/Filter /DCTDecode /Length "+jpeg.length+" >>\n"
-    );
-
-    addText("stream\n");
-    addBytes(jpeg);
-    addText("\nendstream\nendobj\n");
-
-    const content=
-      "q\n595.28 0 0 841.89 0 0 cm\n/Im0 Do\nQ\n";
-
-    const contentBytes=encoder.encode(content);
-
-    offsets[contentId]=position;
-
-    addText(contentId+" 0 obj\n");
-    addText("<< /Length "+contentBytes.length+" >>\n");
-    addText("stream\n");
-    addBytes(contentBytes);
-    addText("endstream\nendobj\n");
+  for(let i=1;i<objects.length;i++){
+    offsets[i]=position;
+    const part=joinBytes([
+      ascii(i+" 0 obj\n"),
+      objects[i],
+      ascii("\nendobj\n")
+    ]);
+    parts.push(part);
+    position+=part.length;
   }
 
   const xrefPosition=position;
-
-  addText("xref\n0 "+(objectCount+1)+"\n");
-  addText("0000000000 65535 f \n");
-
-  for(let i=1;i<=objectCount;i++){
-    addText(
-      String(offsets[i]).padStart(10,"0")+
-      " 00000 n \n"
-    );
+  let xref="xref\n0 "+objects.length+"\n";
+  xref+="0000000000 65535 f \n";
+  for(let i=1;i<objects.length;i++){
+    xref+=String(offsets[i]).padStart(10,"0")+" 00000 n \n";
   }
 
-  addText(
-    "trailer\n<< /Size "+(objectCount+1)+
-    " /Root 1 0 R >>\n"
-  );
+  const trailer=
+    "trailer\n<< /Size "+objects.length+" /Root 1 0 R >>\n"+
+    "startxref\n"+xrefPosition+"\n%%EOF";
 
-  addText("startxref\n"+xrefPosition+"\n%%EOF");
-
-  return new Blob(parts,{type:"application/pdf"});
+  parts.push(ascii(xref+trailer));
+  return new Blob([joinBytes(parts)],{type:"application/pdf"});
 }
 
 async function createPDF(){
-
-  const text=document.getElementById("input").value;
-  const status=document.getElementById("status");
-  const button=document.getElementById("create");
-  const copyButton=document.getElementById("copy");
-  const urlField=document.getElementById("url");
-
-  if(!text.trim()){
-    alert("文章を入力してください。");
+  const text=input.value.trim();
+  if(!text){
+    setStatus("先に文章を貼り付けてください。");
     return;
   }
 
-  button.disabled=true;
-  copyButton.style.display="none";
-  urlField.style.display="none";
-  status.textContent="PDFを作成しています……";
+  createButton.disabled=true;
+  copyButton.disabled=true;
+  urlField.value="";
 
   try{
+    setStatus("PDFを作成しています……");
 
-    const images=[];
-    let page=makeCanvas();
-
-    const margin=100;
-    const maxWidth=1040;
-    const lineHeight=48;
-    const bottom=1650;
-
-    function savePage(){
-      images.push(canvasToJpeg(page.canvas));
-    }
-
-    function addLine(line){
-
-      if(page.y+lineHeight>bottom){
-        savePage();
-        page=makeCanvas();
-      }
-
-      if(line!==""){
-        page.ctx.fillText(line,margin,page.y);
-      }
-
-      page.y+=lineHeight;
-    }
-
-    const paragraphs=text
-      .replace(/\r\n/g,"\n")
-      .replace(/\r/g,"\n")
-      .split("\n");
-
-    for(const paragraph of paragraphs){
-
-      if(paragraph===""){
-        addLine("");
-        continue;
-      }
-
-      let line="";
-
-      for(const char of Array.from(paragraph)){
-
-        const test=line+char;
-
-        if(
-          page.ctx.measureText(test).width>maxWidth &&
-          line!==""
-        ){
-          addLine(line);
-          line=char;
-        }else{
-          line=test;
-        }
-      }
-
-      if(line!==""){
-        addLine(line);
-      }
-    }
-
-    savePage();
-
-    status.textContent="PDFをオンライン保存しています……";
-
+    const pages=makePages(text);
+    const images=makeImagePages(pages);
     const blob=buildPDF(images);
+
+    setStatus("PDFをアップロードしています……");
 
     const form=new FormData();
     form.append("file",blob,"document.pdf");
 
     const response=await fetch(
       "https://aisenseapi.com/services/v1/storage",
-      {
-        method:"POST",
-        body:form
-      }
+      {method:"POST",body:form}
     );
 
     const result=await response.json();
@@ -321,51 +237,34 @@ async function createPDF(){
       throw new Error(result.error || "アップロードに失敗しました");
     }
 
-    urlField.value=result.storage_url;
-    urlField.style.display="block";
-    copyButton.style.display="block";
+    const viewerURL=
+      location.origin+
+      location.pathname.replace(/index\.html$/,"")+
+      "viewer.html?url="+encodeURIComponent(result.storage_url);
 
-    status.textContent=
-      "完成！ 全"+images.length+"ページ。URLをコピーできます。有効期限は24時間です。";
+    urlField.value=viewerURL;
+    copyButton.disabled=false;
+
+    setStatus("完成しました。閲覧用URLをコピーできます。");
 
   }catch(error){
-
-    console.error(error);
-
-    status.textContent=
-      "エラー："+(error.message||"作成・保存に失敗しました。");
-
+    setStatus("エラー："+error.message);
   }finally{
-
-    button.disabled=false;
-
+    createButton.disabled=false;
   }
 }
 
 async function copyURL(){
-
-  const field=document.getElementById("url");
-  const status=document.getElementById("status");
-
+  if(!urlField.value)return;
   try{
-
-    await navigator.clipboard.writeText(field.value);
-    status.textContent="URLをコピーしました。Sessionなどに貼り付けてください。";
-
+    await navigator.clipboard.writeText(urlField.value);
+    setStatus("URLをコピーしました。");
   }catch(error){
-
-    field.focus();
-    field.select();
-
-    const copied=document.execCommand("copy");
-
-    status.textContent=copied
-      ? "URLをコピーしました。"
-      : "URLを長押ししてコピーしてください。";
-
+    urlField.select();
+    document.execCommand("copy");
+    setStatus("URLをコピーしました。");
   }
 }
 </script>
-
 </body>
 </html>
