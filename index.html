@@ -6,215 +6,125 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="pdf">
 <meta name="theme-color" content="#ffffff">
-<link rel="apple-touch-icon" href="./apple-touch-icon.png?v=4">
-<link rel="icon" type="image/png" href="./apple-touch-icon.png?v=4">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png?v=5">
+<link rel="icon" type="image/png" href="./apple-touch-icon.png?v=5">
 <title>pdf</title>
-
 <style>
 *{box-sizing:border-box}
-body{
-  margin:0;
-  padding:25px 18px;
-  background:#fff;
-  color:#111;
-  font-family:-apple-system,BlinkMacSystemFont,sans-serif;
-}
+body{margin:0;padding:24px 18px;background:#fff;color:#111;font-family:-apple-system,BlinkMacSystemFont,sans-serif}
 h1{font-size:25px;margin:8px 0}
 p{font-size:14px;color:#777;line-height:1.7}
-textarea{
-  display:block;
-  width:100%;
-  height:58vh;
-  padding:15px;
-  border:1px solid #ccc;
-  border-radius:12px;
-  font-size:16px;
-  line-height:1.8;
-  resize:vertical;
-}
-button{
-  display:block;
-  width:100%;
-  margin-top:14px;
-  padding:17px;
-  border:0;
-  border-radius:11px;
-  background:#111;
-  color:white;
-  font-size:16px;
-  font-weight:bold;
-}
+textarea{display:block;width:100%;height:58vh;padding:15px;border:1px solid #ccc;border-radius:12px;font-size:16px;line-height:1.8;resize:vertical}
+button{display:block;width:100%;margin-top:14px;padding:17px;border:0;border-radius:11px;background:#111;color:white;font-size:16px;font-weight:bold}
 button:disabled{opacity:.4}
 #share{display:none;background:#2878df}
 #status{font-size:13px;margin-top:15px;color:#555}
 </style>
 </head>
-
 <body>
-
 <h1>pdf</h1>
 <p>文章を貼り付けてPDFにできます。作成したPDFはiPhoneから共有できます。</p>
-
 <textarea id="input" placeholder="ここに長い文章を貼り付けてください"></textarea>
-
 <button id="create" onclick="createPDF()">PDFを作成</button>
 <button id="share" onclick="sharePDF()">PDFを共有する</button>
-
 <div id="status"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js"></script>
-
 <script>
-let pdfFile = null;
+let pdfFile=null;
 
 async function createPDF(){
-  const text = document.getElementById("input").value;
+ const text=document.getElementById("input").value;
+ const status=document.getElementById("status");
+ const button=document.getElementById("create");
 
-  if(!text.trim()){
-    alert("文章を入力してください。");
-    return;
+ if(!text.trim()){alert("文章を入力してください。");return;}
+ if(!window.jspdf){alert("PDF機能を読み込めません。通信を確認してください。");return;}
+
+ button.disabled=true;
+ status.textContent="PDFを作成しています……";
+
+ try{
+  const {jsPDF}=window.jspdf;
+  const pdf=new jsPDF({orientation:"portrait",unit:"mm",format:"a4",compress:true});
+
+  const pageWidth=210;
+  const pageHeight=297;
+  const marginX=18;
+  const marginY=18;
+  const fontSize=11;
+  const lineHeight=7;
+  const maxWidth=pageWidth-marginX*2;
+
+  pdf.setFont("helvetica","normal");
+  pdf.setFontSize(fontSize);
+
+  const lines=[];
+  const paragraphs=text.replace(/\r\n/g,"\n").replace(/\r/g,"\n").split("\n");
+
+  for(const paragraph of paragraphs){
+   if(paragraph===""){lines.push("");continue;}
+   let line="";
+   for(const char of Array.from(paragraph)){
+    const test=line+char;
+    if(pdf.getTextWidth(test)>maxWidth && line!==""){
+     lines.push(line);
+     line=char;
+    }else{
+     line=test;
+    }
+   }
+   lines.push(line);
   }
 
-  if(!window.jspdf){
-    alert("PDF作成機能を読み込めません。通信を確認して再度お試しください。");
-    return;
+  let y=marginY;
+  let firstPage=true;
+
+  for(const line of lines){
+   if(y+lineHeight>pageHeight-marginY){
+    pdf.addPage();
+    y=marginY;
+    firstPage=false;
+   }
+   if(line!==""){
+    pdf.text(line,marginX,y);
+   }
+   y+=lineHeight;
   }
 
-  const button = document.getElementById("create");
-  const status = document.getElementById("status");
-  button.disabled = true;
-  status.textContent = "PDFを作成しています……";
+  const blob=pdf.output("blob");
+  pdfFile=new File([blob],"document.pdf",{type:"application/pdf"});
 
-  try{
-    const {jsPDF} = window.jspdf;
-    const pdf = new jsPDF({
-      orientation:"portrait",
-      unit:"pt",
-      format:"a4",
-      compress:true
-    });
-
-    const W = 1240;
-    const H = 1754;
-    const margin = 110;
-    const fontSize = 30;
-    const lineHeight = 54;
-    const maxWidth = W - margin * 2;
-
-    let canvas = document.createElement("canvas");
-    canvas.width = W;
-    canvas.height = H;
-
-    let ctx = canvas.getContext("2d");
-    let y;
-
-    function newPage(){
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0,0,W,H);
-      ctx.fillStyle = "#111111";
-      ctx.font = fontSize + 'px -apple-system, BlinkMacSystemFont, sans-serif';
-      ctx.textBaseline = "top";
-      y = margin;
-    }
-
-    function savePage(first){
-      const image = canvas.toDataURL("image/jpeg",0.92);
-      if(!first) pdf.addPage();
-      pdf.addImage(image,"JPEG",0,0,595.28,841.89,undefined,"FAST");
-    }
-
-    newPage();
-
-    const paragraphs = text.replace(/\r\n/g,"\n").replace(/\r/g,"\n").split("\n");
-
-    for(const paragraph of paragraphs){
-      if(paragraph === ""){
-        y += lineHeight;
-        if(y + lineHeight > H - margin){
-          savePage(false);
-          newPage();
-        }
-        continue;
-      }
-
-      let line = "";
-
-      for(const char of Array.from(paragraph)){
-        const test = line + char;
-
-        if(ctx.measureText(test).width > maxWidth && line !== ""){
-          ctx.fillText(line,margin,y);
-          y += lineHeight;
-          line = char;
-
-          if(y + lineHeight > H - margin){
-            savePage(false);
-            newPage();
-          }
-        }else{
-          line = test;
-        }
-      }
-
-      if(line !== ""){
-        ctx.fillText(line,margin,y);
-        y += lineHeight;
-      }
-
-      if(y + lineHeight > H - margin){
-        savePage(false);
-        newPage();
-      }
-    }
-
-    savePage(false);
-
-    const blob = pdf.output("blob");
-    pdfFile = new File([blob],"document.pdf",{
-      type:"application/pdf"
-    });
-
-    document.getElementById("share").style.display = "block";
-    status.textContent = "PDFができました。下のボタンから共有できます。";
-
-  }catch(error){
-    console.error(error);
-    status.textContent = "作成できませんでした。もう一度お試しください。";
-  }finally{
-    button.disabled = false;
-  }
+  document.getElementById("share").style.display="block";
+  status.textContent="PDFができました。下のボタンから共有できます。";
+ }catch(error){
+  console.error(error);
+  status.textContent="PDFを作成できませんでした。";
+ }finally{
+  button.disabled=false;
+ }
 }
 
 async function sharePDF(){
-  if(!pdfFile){
-    alert("先にPDFを作成してください。");
-    return;
+ if(!pdfFile){alert("先にPDFを作成してください。");return;}
+ try{
+  if(navigator.canShare&&navigator.canShare({files:[pdfFile]})){
+   await navigator.share({files:[pdfFile],title:"PDF"});
+  }else{
+   const url=URL.createObjectURL(pdfFile);
+   const a=document.createElement("a");
+   a.href=url;
+   a.download="document.pdf";
+   a.click();
+   setTimeout(()=>URL.revokeObjectURL(url),60000);
+   document.getElementById("status").textContent="PDFを保存しました。ファイルアプリから共有してください。";
   }
-
-  try{
-    if(navigator.canShare && navigator.canShare({files:[pdfFile]})){
-      await navigator.share({
-        files:[pdfFile],
-        title:"PDF"
-      });
-    }else{
-      const url = URL.createObjectURL(pdfFile);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "document.pdf";
-      a.click();
-      setTimeout(()=>URL.revokeObjectURL(url),60000);
-      document.getElementById("status").textContent =
-        "PDFを保存しました。ファイルアプリから共有してください。";
-    }
-  }catch(error){
-    if(error.name !== "AbortError"){
-      document.getElementById("status").textContent =
-        "共有できませんでした。もう一度お試しください。";
-    }
+ }catch(error){
+  if(error.name!=="AbortError"){
+   document.getElementById("status").textContent="共有できませんでした。";
   }
+ }
 }
 </script>
-
 </body>
 </html>
