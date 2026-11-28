@@ -12,7 +12,6 @@
 html,body{
   margin:0;
   padding:0;
-  width:100%;
   min-height:100%;
   background:#f5f5f5;
   color:#222;
@@ -23,10 +22,7 @@ main{
   margin:auto;
   padding:22px 16px 40px;
 }
-h1{
-  font-size:24px;
-  margin:8px 0 20px;
-}
+h1{font-size:24px;margin:8px 0 20px}
 textarea{
   display:block;
   width:100%;
@@ -92,9 +88,8 @@ button:disabled{opacity:.45}
 <div id="result"></div>
 
 <div class="small">
-文章はA4サイズで自動的に複数ページへ続きます。<br>
-生成された共有URLは24時間で期限切れになります。<br>
-このサービスには機密情報を入力しないでください。
+長文は自動で複数ページに分割されます。<br>
+共有URLの有効期限は24時間です。
 </div>
 </main>
 
@@ -114,15 +109,50 @@ function escapeHTML(s){
   })[c]);
 }
 
-button.addEventListener("click",async()=>{
-  const text=input.value;
+// 文章をページ単位に分割する
+function makePages(text){
+  const sourceLines=text.replace(/\r\n?/g,"\n").split("\n");
+  const visualLines=[];
 
-  if(!text.trim()){
-    status.textContent="文章を入力してください。";
-    return;
+  for(const sourceLine of sourceLines){
+    const chars=Array.from(sourceLine);
+
+    if(chars.length===0){
+      visualLines.push("");
+      continue;
+    }
+
+    for(let i=0;i<chars.length;i+=38){
+      visualLines.push(chars.slice(i,i+38).join(""));
+    }
   }
 
-  const html=`
+  const pages=[];
+  const linesPerPage=32;
+
+  for(let i=0;i<visualLines.length;i+=linesPerPage){
+    pages.push(visualLines.slice(i,i+linesPerPage));
+  }
+
+  return pages;
+}
+
+function makeHTML(pages){
+  const pageHTML=pages.map((lines,index)=>{
+    const content=lines.map(line=>{
+      return "<div>"+(line ? escapeHTML(line) : "&nbsp;")+"</div>";
+    }).join("");
+
+    const last=index===pages.length-1;
+
+    return `
+      <section class="page ${last ? "last" : ""}">
+        ${content}
+      </section>
+    `;
+  }).join("");
+
+  return `
 <!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -130,7 +160,7 @@ button.addEventListener("click",async()=>{
 <style>
 @page{
   size:A4;
-  margin:18mm 17mm;
+  margin:15mm 16mm;
 }
 html,body{
   margin:0;
@@ -140,51 +170,73 @@ html,body{
 }
 body{
   font-family:"Noto Sans CJK JP","Yu Gothic",sans-serif;
-  font-size:11pt;
-  line-height:1.85;
+  font-size:10pt;
+  line-height:1.7;
   color:#222;
 }
-.content{
+.page{
   display:block;
   width:100%;
   height:auto;
-  min-height:0;
-  max-height:none;
   overflow:visible;
+  page-break-after:always;
+  break-after:page;
+  page-break-inside:avoid;
+  break-inside:avoid;
+}
+.page.last{
+  page-break-after:auto;
+  break-after:auto;
+}
+.page div{
+  display:block;
+  min-height:1.7em;
   white-space:pre-wrap;
   overflow-wrap:anywhere;
-  word-break:break-word;
+  word-break:break-all;
 }
 </style>
 </head>
 <body>
-<div class="content">${escapeHTML(text)}</div>
+${pageHTML}
 </body>
 </html>`;
+}
+
+button.addEventListener("click",async()=>{
+  const text=input.value;
+
+  if(!text.trim()){
+    status.textContent="文章を入力してください。";
+    return;
+  }
+
+  const pages=makePages(text);
+  const html=makeHTML(pages);
 
   const payload={
     html:html,
     options:{
       "page-size":"A4",
       "orientation":"Portrait",
-      "margin-top":"18mm",
-      "margin-bottom":"18mm",
-      "margin-left":"17mm",
-      "margin-right":"17mm"
+      "margin-top":"15mm",
+      "margin-bottom":"15mm",
+      "margin-left":"16mm",
+      "margin-right":"16mm"
     }
   };
 
-  const bytes=new TextEncoder().encode(JSON.stringify(payload)).length;
+  const body=JSON.stringify(payload);
+  const bytes=new TextEncoder().encode(body).length;
 
   if(bytes>230000){
-    status.textContent=
-      "文章が大きすぎます。現在のAPIの送信上限を超えています。";
+    status.textContent="文章が大きすぎます。送信上限を超えています。";
     return;
   }
 
   button.disabled=true;
   button.textContent="作成中……";
-  status.textContent="PDFを生成しています。少し待ってください。";
+  status.textContent="全"+pages.length+"ページを生成しています。";
   resultBox.style.display="none";
 
   try{
@@ -195,18 +247,20 @@ body{
         headers:{
           "Content-Type":"application/json"
         },
-        body:JSON.stringify(payload)
+        body:body
       }
     );
 
     const data=await response.json();
 
     if(!response.ok || !data.storage_url){
-      throw new Error(data.message || data.error || "PDF生成に失敗しました");
+      throw new Error(
+        data.message || data.error || "PDF生成に失敗しました"
+      );
     }
 
     if(!/^https:\/\/aisenseapi\.com\/services\/v1\/storage\/[a-f0-9-]+$/i.test(data.storage_url)){
-      throw new Error("返されたPDFのURLが正しくありません");
+      throw new Error("PDFのURLが正しくありません");
     }
 
     const viewerURL=
@@ -215,8 +269,12 @@ body{
       "viewer.html?url="+encodeURIComponent(data.storage_url);
 
     resultBox.innerHTML="";
+
     const title=document.createElement("strong");
     title.textContent="PDFができました";
+
+    const info=document.createElement("p");
+    info.textContent="分割指定："+pages.length+"ページ";
 
     const link=document.createElement("a");
     link.href=viewerURL;
@@ -226,6 +284,7 @@ body{
 
     const copy=document.createElement("button");
     copy.textContent="共有URLをコピー";
+
     copy.onclick=async()=>{
       try{
         await navigator.clipboard.writeText(viewerURL);
@@ -242,10 +301,12 @@ body{
     };
 
     resultBox.appendChild(title);
+    resultBox.appendChild(info);
     resultBox.appendChild(link);
     resultBox.appendChild(copy);
     resultBox.style.display="block";
-    status.textContent="作成が完了しました。";
+
+    status.textContent="PDFの生成が完了しました。";
 
   }catch(error){
     status.textContent="エラー："+error.message;
