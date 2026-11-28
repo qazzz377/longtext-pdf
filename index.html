@@ -4,317 +4,158 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="theme-color" content="#ffffff">
 <title>pdf</title>
-
 <style>
 *{box-sizing:border-box}
-html,body{
-  margin:0;
-  padding:0;
-  min-height:100%;
-  background:#f5f5f5;
-  color:#222;
-  font-family:-apple-system,BlinkMacSystemFont,sans-serif;
-}
-main{
-  max-width:700px;
-  margin:auto;
-  padding:22px 16px 40px;
-}
-h1{font-size:24px;margin:8px 0 20px}
-textarea{
-  display:block;
-  width:100%;
-  min-height:55vh;
-  padding:16px;
-  border:1px solid #ccc;
-  border-radius:12px;
-  background:white;
-  font-size:16px;
-  line-height:1.8;
-  resize:vertical;
-}
-button{
-  display:block;
-  width:100%;
-  padding:17px;
-  margin-top:16px;
-  border:0;
-  border-radius:12px;
-  background:#111;
-  color:white;
-  font-size:17px;
-  font-weight:bold;
-}
-button:disabled{opacity:.45}
-#status{
-  margin-top:18px;
-  line-height:1.7;
-  overflow-wrap:anywhere;
-}
-#result{
-  display:none;
-  margin-top:20px;
-  padding:16px;
-  background:white;
-  border-radius:12px;
-  overflow-wrap:anywhere;
-}
-#result a{
-  display:block;
-  margin-top:12px;
-  color:#0645ad;
-  word-break:break-all;
-}
-.small{
-  color:#777;
-  font-size:12px;
-  line-height:1.6;
-  margin-top:12px;
-}
+body{margin:0;background:#f5f5f5;color:#222;font-family:-apple-system,sans-serif}
+main{max-width:700px;margin:auto;padding:22px 16px 40px}
+h1{font-size:24px}
+textarea{width:100%;height:55vh;padding:16px;border:1px solid #ccc;border-radius:12px;font-size:16px;line-height:1.8}
+button{width:100%;padding:17px;margin-top:16px;border:0;border-radius:12px;background:#111;color:white;font-size:17px}
+#status,#result{margin-top:18px;line-height:1.7;overflow-wrap:anywhere}
+#result{display:none;padding:16px;background:white;border-radius:12px}
+#result a{display:block;margin-top:12px;word-break:break-all}
 </style>
 </head>
-
 <body>
 <main>
 <h1>pdf</h1>
-
 <textarea id="input" placeholder="ここに文章を貼り付け"></textarea>
-
 <button id="make">PDFを作成する</button>
-
 <div id="status"></div>
 <div id="result"></div>
-
-<div class="small">
-長文は自動で複数ページに分割されます。<br>
-共有URLの有効期限は24時間です。
-</div>
 </main>
 
 <script>
 const input=document.getElementById("input");
 const button=document.getElementById("make");
 const status=document.getElementById("status");
-const resultBox=document.getElementById("result");
+const result=document.getElementById("result");
 
-function escapeHTML(s){
-  return s.replace(/[&<>"']/g,c=>({
-    "&":"&amp;",
-    "<":"&lt;",
-    ">":"&gt;",
-    '"':"&quot;",
-    "'":"&#39;"
-  })[c]);
+function esc(s){
+ return s.replace(/[&<>"']/g,c=>({
+ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+ })[c]);
 }
 
-// 文章をページ単位に分割する
-function makePages(text){
-  const sourceLines=text.replace(/\r\n?/g,"\n").split("\n");
-  const visualLines=[];
-
-  for(const sourceLine of sourceLines){
-    const chars=Array.from(sourceLine);
-
-    if(chars.length===0){
-      visualLines.push("");
-      continue;
-    }
-
-    for(let i=0;i<chars.length;i+=38){
-      visualLines.push(chars.slice(i,i+38).join(""));
-    }
+function splitPages(text){
+ const lines=text.replace(/\r\n?/g,"\n").split("\n");
+ const visual=[];
+ for(const line of lines){
+  const chars=Array.from(line);
+  if(!chars.length){visual.push("");continue;}
+  for(let i=0;i<chars.length;i+=30){
+   visual.push(chars.slice(i,i+30).join(""));
   }
+ }
+ const pages=[];
+ for(let i=0;i<visual.length;i+=25){
+  pages.push(visual.slice(i,i+25));
+ }
+ return pages;
+}
 
-  const pages=[];
-  const linesPerPage=32;
+button.onclick=async()=>{
+ const text=input.value;
+ if(!text.trim()){
+  status.textContent="文章を入力してください";
+  return;
+ }
 
-  for(let i=0;i<visualLines.length;i+=linesPerPage){
-    pages.push(visualLines.slice(i,i+linesPerPage));
+ const pages=splitPages(text);
+ const sections=pages.map((lines,i)=>`
+ <section style="${i===0?"":"page-break-before:always;"}">
+ ${lines.map(line=>`<div>${line?esc(line):"&nbsp;"}</div>`).join("")}
+ </section>
+ `).join("");
+
+ const html=`<!DOCTYPE html>
+ <html lang="ja">
+ <head><meta charset="UTF-8">
+ <style>
+ @page{size:A4;margin:15mm 16mm}
+ html,body{margin:0;padding:0}
+ body{font-family:sans-serif;font-size:10pt;line-height:1.65;color:#222}
+ section{display:block;width:100%;height:auto;overflow:visible}
+ section div{min-height:1.65em;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-all}
+ </style></head>
+ <body>${sections}</body></html>`;
+
+ const payload={
+  html:html,
+  options:{
+   "page-size":"A4",
+   "orientation":"Portrait",
+   "margin-top":"15mm",
+   "margin-bottom":"15mm",
+   "margin-left":"16mm",
+   "margin-right":"16mm"
   }
+ };
 
-  return pages;
-}
+ const body=JSON.stringify(payload);
+ if(new TextEncoder().encode(body).length>230000){
+  status.textContent="送信上限を超えています。文章を短くしてください。";
+  return;
+ }
 
-function makeHTML(pages){
-  const pageHTML=pages.map((lines,index)=>{
-    const content=lines.map(line=>{
-      return "<div>"+(line ? escapeHTML(line) : "&nbsp;")+"</div>";
-    }).join("");
+ button.disabled=true;
+ button.textContent="作成中……";
+ status.textContent="PDFを生成しています……";
+ result.style.display="none";
 
-    const last=index===pages.length-1;
+ try{
+  const r=await fetch("https://aisenseapi.com/services/v1/html2pdf",{
+   method:"POST",
+   headers:{"Content-Type":"application/json"},
+   body
+  });
+  const d=await r.json();
 
-    return `
-      <section class="page ${last ? "last" : ""}">
-        ${content}
-      </section>
-    `;
-  }).join("");
+  if(!r.ok||!d.storage_url)throw Error(d.message||d.error||"生成失敗");
 
-  return `
-<!DOCTYPE html>
-<html lang="ja">
-<head>
-<meta charset="UTF-8">
-<style>
-@page{
-  size:A4;
-  margin:15mm 16mm;
-}
-html,body{
-  margin:0;
-  padding:0;
-  height:auto;
-  overflow:visible;
-}
-body{
-  font-family:"Noto Sans CJK JP","Yu Gothic",sans-serif;
-  font-size:10pt;
-  line-height:1.7;
-  color:#222;
-}
-.page{
-  display:block;
-  width:100%;
-  height:auto;
-  overflow:visible;
-  page-break-after:always;
-  break-after:page;
-  page-break-inside:avoid;
-  break-inside:avoid;
-}
-.page.last{
-  page-break-after:auto;
-  break-after:auto;
-}
-.page div{
-  display:block;
-  min-height:1.7em;
-  white-space:pre-wrap;
-  overflow-wrap:anywhere;
-  word-break:break-all;
-}
-</style>
-</head>
-<body>
-${pageHTML}
-</body>
-</html>`;
-}
+  const viewer=location.origin+
+   location.pathname.replace(/index\.html$/,"").replace(/\/?$/,"/")+
+   "viewer.html?url="+encodeURIComponent(d.storage_url);
 
-button.addEventListener("click",async()=>{
-  const text=input.value;
+  result.innerHTML="";
+  const label=document.createElement("strong");
+  label.textContent="PDF生成完了";
 
-  if(!text.trim()){
-    status.textContent="文章を入力してください。";
-    return;
-  }
+  const link=document.createElement("a");
+  link.href=viewer;
+  link.textContent="PDFを開く・共有する";
+  link.target="_blank";
 
-  const pages=makePages(text);
-  const html=makeHTML(pages);
-
-  const payload={
-    html:html,
-    options:{
-      "page-size":"A4",
-      "orientation":"Portrait",
-      "margin-top":"15mm",
-      "margin-bottom":"15mm",
-      "margin-left":"16mm",
-      "margin-right":"16mm"
-    }
+  const copy=document.createElement("button");
+  copy.textContent="共有URLをコピー";
+  copy.onclick=async()=>{
+   try{
+    await navigator.clipboard.writeText(viewer);
+    copy.textContent="コピーしました";
+   }catch(e){
+    const t=document.createElement("textarea");
+    t.value=viewer;
+    document.body.appendChild(t);
+    t.select();
+    document.execCommand("copy");
+    t.remove();
+    copy.textContent="コピーしました";
+   }
   };
 
-  const body=JSON.stringify(payload);
-  const bytes=new TextEncoder().encode(body).length;
+  result.append(label,link,copy);
+  result.style.display="block";
+  status.textContent="分割指定："+pages.length+"ページ。PDFを開いて確認してください。";
 
-  if(bytes>230000){
-    status.textContent="文章が大きすぎます。送信上限を超えています。";
-    return;
-  }
-
-  button.disabled=true;
-  button.textContent="作成中……";
-  status.textContent="全"+pages.length+"ページを生成しています。";
-  resultBox.style.display="none";
-
-  try{
-    const response=await fetch(
-      "https://aisenseapi.com/services/v1/html2pdf",
-      {
-        method:"POST",
-        headers:{
-          "Content-Type":"application/json"
-        },
-        body:body
-      }
-    );
-
-    const data=await response.json();
-
-    if(!response.ok || !data.storage_url){
-      throw new Error(
-        data.message || data.error || "PDF生成に失敗しました"
-      );
-    }
-
-    if(!/^https:\/\/aisenseapi\.com\/services\/v1\/storage\/[a-f0-9-]+$/i.test(data.storage_url)){
-      throw new Error("PDFのURLが正しくありません");
-    }
-
-    const viewerURL=
-      location.origin+
-      location.pathname.replace(/index\.html$/,"").replace(/\/?$/,"/")+
-      "viewer.html?url="+encodeURIComponent(data.storage_url);
-
-    resultBox.innerHTML="";
-
-    const title=document.createElement("strong");
-    title.textContent="PDFができました";
-
-    const info=document.createElement("p");
-    info.textContent="分割指定："+pages.length+"ページ";
-
-    const link=document.createElement("a");
-    link.href=viewerURL;
-    link.textContent="PDFを開く・共有する";
-    link.target="_blank";
-    link.rel="noopener";
-
-    const copy=document.createElement("button");
-    copy.textContent="共有URLをコピー";
-
-    copy.onclick=async()=>{
-      try{
-        await navigator.clipboard.writeText(viewerURL);
-        copy.textContent="コピーしました";
-      }catch(e){
-        const area=document.createElement("textarea");
-        area.value=viewerURL;
-        document.body.appendChild(area);
-        area.select();
-        document.execCommand("copy");
-        area.remove();
-        copy.textContent="コピーしました";
-      }
-    };
-
-    resultBox.appendChild(title);
-    resultBox.appendChild(info);
-    resultBox.appendChild(link);
-    resultBox.appendChild(copy);
-    resultBox.style.display="block";
-
-    status.textContent="PDFの生成が完了しました。";
-
-  }catch(error){
-    status.textContent="エラー："+error.message;
-  }finally{
-    button.disabled=false;
-    button.textContent="PDFを作成する";
-  }
-});
+ }catch(e){
+  status.textContent="エラー："+e.message;
+ }finally{
+  button.disabled=false;
+  button.textContent="PDFを作成する";
+ }
+};
 </script>
+</main>
 </body>
 </html>
