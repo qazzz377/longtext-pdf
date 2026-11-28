@@ -32,37 +32,40 @@ button:disabled{opacity:.5}
  border:1px solid #ddd;border-radius:10px;
  overflow-wrap:anywhere;
 }
-#result a{display:block;margin-top:12px;font-weight:bold}
+#result a{
+ display:block;
+ margin-top:12px;
+ padding:16px;
+ border-radius:10px;
+ background:#111;
+ color:#fff;
+ text-align:center;
+ text-decoration:none;
+ font-weight:bold;
+}
 </style>
 </head>
 <body>
-
 <h1>pdf</h1>
-
 <textarea id="input" placeholder="ここに文章を貼り付け"></textarea>
 
-<button id="create" onclick="createPDF()">PDFを作成する</button>
+PDFを作成する
 
 <div id="status"></div>
 <div id="result"></div>
-
 <script>
 const API="https://aisenseapi.com/services/v1/html2pdf";
-
 function esc(s){
  return s.replace(/[&<>"']/g,c=>({
   "&":"&amp;","<":"&lt;",">":"&gt;",
   '"':"&quot;","'":"&#39;"
  })[c]);
 }
-
 function makeHTML(text){
  const lines=text.replace(/\r\n/g,"\n").replace(/\r/g,"\n").split("\n");
-
  const body=lines.map(line=>{
   return `<p>${line===""?"&nbsp;":esc(line)}</p>`;
  }).join("\n");
-
  return `<!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -104,66 +107,58 @@ ${body}
 }
 
 async function createPDF(){
- const input=document.getElementById("input");
- const button=document.getElementById("create");
- const status=document.getElementById("status");
- const result=document.getElementById("result");
+const input=document.getElementById(“input”);
+const button=document.getElementById(“create”);
+const status=document.getElementById(“status”);
+const result=document.getElementById(“result”);
 
- if(!input.value.trim()){
-  status.textContent="文章を入力してください。";
-  return;
- }
-
- button.disabled=true;
- result.style.display="none";
- status.textContent="PDFを生成しています…";
-
- try{
-  const html=makeHTML(input.value);
-
-  const response=await fetch(API,{
-   method:"POST",
-   headers:{"Content-Type":"application/json"},
-   body:JSON.stringify({
-    html:html,
-    options:{
-     "page-size":"A4",
-     "orientation":"Portrait",
-     "margin-top":"15mm",
-     "margin-bottom":"15mm",
-     "margin-left":"16mm",
-     "margin-right":"16mm"
-    }
-   })
-  });
-
-  const data=await response.json();
-
-  if(!response.ok || !data.storage_url){
-   throw new Error(data.error || data.message || "PDF生成に失敗しました");
-  }
-
-  const base=location.origin+
-   location.pathname.replace(/index\.html$/,"").replace(/\/?$/,"/");
-
-  const viewer=base+"viewer.html?url="+
-   encodeURIComponent(data.storage_url);
-
-  result.style.display="block";
-  result.innerHTML=
-   "PDFを作成しました。<br>"+
-   "<a href='"+viewer+"' target='_blank'>PDFを開く</a>"+
-   "<a href='"+data.storage_url+"' target='_blank'>PDFファイルを直接開く</a>";
-
-  status.textContent=
-   "生成完了。\nPDFを開いて、最後まで文章が入っているか確認してください。";
-
- }catch(error){
-  status.textContent="エラー："+error.message;
- }finally{
-  button.disabled=false;
- }
+if(!input.value.trim()){
+status.textContent=“文章を入力してください。”;
+return;
 }
-</script>
+
+button.disabled=true;
+result.style.display=“none”;
+status.textContent=“PDFを生成しています…”;
+
+try{
+const html=makeHTML(input.value);
+
+const response=await fetch(API,{
+method:“POST”,
+headers:{“Content-Type”:“application/json”},
+body:JSON.stringify({
+html:html,
+options:{
+“page-size”:“A4”,
+“orientation”:“Portrait”,
+“margin-top”:“15mm”,
+“margin-bottom”:“15mm”,
+“margin-left”:“16mm”,
+“margin-right”:“16mm”
+}
+})
+});
+
+const data=await response.json();
+
+if(!response.ok || !data.storage_url){
+throw new Error(data.error || data.message || “PDF生成に失敗しました”);
+}
+
+result.style.display=“block”;
+result.innerHTML=
+“PDFを作成しました。”+
+“PDFを開く・共有する”;
+
+status.textContent=
+“生成完了。\n上のボタンからPDFを開けます。\n共有URLは24時間で期限切れになります。”;
+
+}catch(error){
+status.textContent=“エラー：”+error.message;
+}finally{
+button.disabled=false;
+}
+}
 </body>
 </html>
