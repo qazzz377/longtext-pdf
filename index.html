@@ -2,460 +2,258 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="pdf">
+<meta name="theme-color" content="#ffffff">
 <title>pdf</title>
-<link rel="apple-touch-icon" href="./apple-touch-icon.png">
 
 <style>
 *{box-sizing:border-box}
-body{
+html,body{
   margin:0;
-  padding:20px;
-  background:white;
-  color:#111;
-  font-family:-apple-system,BlinkMacSystemFont,sans-serif
+  padding:0;
+  width:100%;
+  min-height:100%;
+  background:#f5f5f5;
+  color:#222;
+  font-family:-apple-system,BlinkMacSystemFont,sans-serif;
 }
-h1{font-size:22px;margin:5px 0 18px}
+main{
+  max-width:700px;
+  margin:auto;
+  padding:22px 16px 40px;
+}
+h1{
+  font-size:24px;
+  margin:8px 0 20px;
+}
 textarea{
   display:block;
   width:100%;
-  height:55vh;
-  padding:14px;
+  min-height:55vh;
+  padding:16px;
   border:1px solid #ccc;
-  border-radius:8px;
+  border-radius:12px;
+  background:white;
   font-size:16px;
   line-height:1.8;
-  resize:vertical
+  resize:vertical;
 }
 button{
+  display:block;
   width:100%;
-  padding:16px;
-  margin-top:14px;
+  padding:17px;
+  margin-top:16px;
   border:0;
-  border-radius:8px;
+  border-radius:12px;
   background:#111;
   color:white;
-  font-size:16px;
-  font-weight:bold
+  font-size:17px;
+  font-weight:bold;
 }
-button:disabled{opacity:.5}
+button:disabled{opacity:.45}
 #status{
   margin-top:18px;
-  font-size:14px;
   line-height:1.7;
   overflow-wrap:anywhere;
-  white-space:pre-wrap
 }
-#url{
+#result{
   display:none;
-  width:100%;
-  padding:12px;
-  margin-top:12px;
-  border:1px solid #ccc;
-  border-radius:8px;
-  font-size:14px
+  margin-top:20px;
+  padding:16px;
+  background:white;
+  border-radius:12px;
+  overflow-wrap:anywhere;
 }
-#copy{display:none;background:#444}
+#result a{
+  display:block;
+  margin-top:12px;
+  color:#0645ad;
+  word-break:break-all;
+}
+.small{
+  color:#777;
+  font-size:12px;
+  line-height:1.6;
+  margin-top:12px;
+}
 </style>
 </head>
 
 <body>
+<main>
+<h1>pdf</h1>
 
-<h1>PDF</h1>
+<textarea id="input" placeholder="ここに文章を貼り付け"></textarea>
 
-<textarea id="input" placeholder="ここに文章を貼り付けてください。"></textarea>
-
-<button id="create">全文をPDFにしてURLを作る</button>
+<button id="make">PDFを作成する</button>
 
 <div id="status"></div>
-<input id="url" readonly>
-<button id="copy">URLをコピー</button>
+<div id="result"></div>
+
+<div class="small">
+文章はA4サイズで自動的に複数ページへ続きます。<br>
+生成された共有URLは24時間で期限切れになります。<br>
+このサービスには機密情報を入力しないでください。
+</div>
+</main>
 
 <script>
-
 const input=document.getElementById("input");
-const createButton=document.getElementById("create");
-const statusBox=document.getElementById("status");
-const urlField=document.getElementById("url");
-const copyButton=document.getElementById("copy");
+const button=document.getElementById("make");
+const status=document.getElementById("status");
+const resultBox=document.getElementById("result");
 
-const PAGE_WIDTH=794;
-const PAGE_HEIGHT=1123;
-const PADDING=70;
-const FONT_SIZE=16;
-const LINE_HEIGHT=28;
-const LINES_PER_PAGE=32;
-
-function status(text){
-  statusBox.textContent=text;
+function escapeHTML(s){
+  return s.replace(/[&<>"']/g,c=>({
+    "&":"&amp;",
+    "<":"&lt;",
+    ">":"&gt;",
+    '"':"&quot;",
+    "'":"&#39;"
+  })[c]);
 }
 
-function loadScript(url){
-  return new Promise((resolve,reject)=>{
-    const script=document.createElement("script");
-    script.src=url;
-    script.onload=()=>resolve();
-    script.onerror=()=>reject(new Error("読み込み失敗"));
-    document.head.appendChild(script);
-  });
-}
+button.addEventListener("click",async()=>{
+  const text=input.value;
 
-async function loadLibrary(name,urls,check){
-  if(check())return;
-
-  for(const url of urls){
-    try{
-      await loadScript(url);
-      if(check())return;
-    }catch(e){}
-  }
-
-  throw new Error(name+"を読み込めません。通信または配信元を確認してください。");
-}
-
-async function loadLibraries(){
-
-  await loadLibrary(
-    "html2canvas",
-    [
-      "https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js",
-      "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js",
-      "https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js"
-    ],
-    ()=>typeof window.html2canvas==="function"
-  );
-
-  await loadLibrary(
-    "jsPDF",
-    [
-      "https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js",
-      "https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js",
-      "https://unpkg.com/jspdf@2.5.2/dist/jspdf.umd.min.js"
-    ],
-    ()=>!!(window.jspdf&&window.jspdf.jsPDF)
-  );
-}
-
-function wrapText(text){
-
-  const canvas=document.createElement("canvas");
-  const ctx=canvas.getContext("2d");
-
-  ctx.font=FONT_SIZE+"px sans-serif";
-
-  const maxWidth=PAGE_WIDTH-PADDING*2;
-  const lines=[];
-
-  const source=text
-    .replace(/\r\n/g,"\n")
-    .replace(/\r/g,"\n");
-
-  const originalLines=source.split("\n");
-
-  for(const originalLine of originalLines){
-
-    if(originalLine===""){
-      lines.push("");
-      continue;
-    }
-
-    let current="";
-
-    for(const char of Array.from(originalLine)){
-
-      const test=current+char;
-
-      if(
-        current &&
-        ctx.measureText(test).width>maxWidth
-      ){
-        lines.push(current);
-        current=char;
-      }else{
-        current=test;
-      }
-    }
-
-    lines.push(current);
-  }
-
-  return lines;
-}
-
-function createPage(lines){
-
-  const page=document.createElement("div");
-
-  page.style.cssText=`
-    position:fixed;
-    left:-10000px;
-    top:0;
-    width:${PAGE_WIDTH}px;
-    height:${PAGE_HEIGHT}px;
-    padding:${PADDING}px;
-    box-sizing:border-box;
-    background:#ffffff;
-    color:#111111;
-    font-family:-apple-system,BlinkMacSystemFont,sans-serif;
-    font-size:${FONT_SIZE}px;
-    line-height:${LINE_HEIGHT}px;
-    overflow:hidden;
-  `;
-
-  for(const value of lines){
-
-    const line=document.createElement("div");
-
-    line.style.cssText=`
-      height:${LINE_HEIGHT}px;
-      line-height:${LINE_HEIGHT}px;
-      white-space:pre;
-      overflow:hidden;
-      margin:0;
-      padding:0;
-    `;
-
-    line.textContent=value;
-    page.appendChild(line);
-  }
-
-  document.body.appendChild(page);
-
-  return page;
-}
-
-async function createPDF(originalText){
-
-  const lines=wrapText(originalText);
-
-  const pages=[];
-
-  for(
-    let i=0;
-    i<lines.length;
-    i+=LINES_PER_PAGE
-  ){
-    pages.push(
-      lines.slice(i,i+LINES_PER_PAGE)
-    );
-  }
-
-  if(pages.length===0){
-    throw new Error("PDFにする文章がありません。");
-  }
-
-  const jsPDF=window.jspdf.jsPDF;
-
-  const pdf=new jsPDF({
-    orientation:"portrait",
-    unit:"mm",
-    format:"a4",
-    compress:true
-  });
-
-  for(let i=0;i<pages.length;i++){
-
-    status(
-      "PDFを作成しています。\n"+
-      "ページ "+(i+1)+" / "+pages.length
-    );
-
-    const page=createPage(pages[i]);
-
-    try{
-
-      const canvas=await window.html2canvas(page,{
-        scale:1.5,
-        backgroundColor:"#ffffff",
-        width:PAGE_WIDTH,
-        height:PAGE_HEIGHT,
-        windowWidth:PAGE_WIDTH,
-        windowHeight:PAGE_HEIGHT,
-        logging:false,
-        useCORS:false
-      });
-
-      const image=canvas.toDataURL(
-        "image/jpeg",
-        0.88
-      );
-
-      if(i>0){
-        pdf.addPage("a4","portrait");
-      }
-
-      pdf.addImage(
-        image,
-        "JPEG",
-        0,
-        0,
-        210,
-        297,
-        undefined,
-        "FAST"
-      );
-
-      canvas.width=1;
-      canvas.height=1;
-
-    }finally{
-      page.remove();
-    }
-
-    await new Promise(resolve=>setTimeout(resolve,30));
-  }
-
-  return {
-    blob:pdf.output("blob"),
-    pageCount:pages.length,
-    lineCount:lines.length
-  };
-}
-
-async function uploadPDF(blob){
-
-  status("PDFを保存しています……");
-
-  const form=new FormData();
-
-  form.append(
-    "file",
-    blob,
-    "document.pdf"
-  );
-
-  const response=await fetch(
-    "https://aisenseapi.com/services/v1/storage",
-    {
-      method:"POST",
-      body:form
-    }
-  );
-
-  const responseText=await response.text();
-
-  let result;
-
-  try{
-    result=JSON.parse(responseText);
-  }catch(e){
-    throw new Error(
-      "保存サービスの応答を読み取れません。HTTP "+
-      response.status
-    );
-  }
-
-  if(!response.ok){
-    throw new Error(
-      result.error||
-      result.message||
-      "保存失敗 HTTP "+response.status
-    );
-  }
-
-  if(!result.storage_url){
-    throw new Error("保存URLが返されませんでした。");
-  }
-
-  return result.storage_url;
-}
-
-createButton.addEventListener("click",async()=>{
-
-  const originalText=input.value;
-
-  if(!originalText.trim()){
-    status("文章を入力してください。");
+  if(!text.trim()){
+    status.textContent="文章を入力してください。";
     return;
   }
 
-  createButton.disabled=true;
-  urlField.style.display="none";
-  copyButton.style.display="none";
-  copyButton.textContent="URLをコピー";
+  const html=`
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<style>
+@page{
+  size:A4;
+  margin:18mm 17mm;
+}
+html,body{
+  margin:0;
+  padding:0;
+  height:auto;
+  overflow:visible;
+}
+body{
+  font-family:"Noto Sans CJK JP","Yu Gothic",sans-serif;
+  font-size:11pt;
+  line-height:1.85;
+  color:#222;
+}
+.content{
+  display:block;
+  width:100%;
+  height:auto;
+  min-height:0;
+  max-height:none;
+  overflow:visible;
+  white-space:pre-wrap;
+  overflow-wrap:anywhere;
+  word-break:break-word;
+}
+</style>
+</head>
+<body>
+<div class="content">${escapeHTML(text)}</div>
+</body>
+</html>`;
+
+  const payload={
+    html:html,
+    options:{
+      "page-size":"A4",
+      "orientation":"Portrait",
+      "margin-top":"18mm",
+      "margin-bottom":"18mm",
+      "margin-left":"17mm",
+      "margin-right":"17mm"
+    }
+  };
+
+  const bytes=new TextEncoder().encode(JSON.stringify(payload)).length;
+
+  if(bytes>230000){
+    status.textContent=
+      "文章が大きすぎます。現在のAPIの送信上限を超えています。";
+    return;
+  }
+
+  button.disabled=true;
+  button.textContent="作成中……";
+  status.textContent="PDFを生成しています。少し待ってください。";
+  resultBox.style.display="none";
 
   try{
-
-    status("PDF生成ライブラリを確認しています……");
-
-    await loadLibraries();
-
-    status("日本語の文章を解析しています……");
-
-    await document.fonts.ready;
-
-    const result=await createPDF(originalText);
-
-    const blob=result.blob;
-
-    status(
-      "PDF生成完了。\n"+
-      "ページ数："+result.pageCount+"\n"+
-      "入力文字数："+originalText.length+"\n"+
-      "ファイル容量："+Math.round(blob.size/1024)+"KB\n"+
-      "共有URLを作成しています……"
+    const response=await fetch(
+      "https://aisenseapi.com/services/v1/html2pdf",
+      {
+        method:"POST",
+        headers:{
+          "Content-Type":"application/json"
+        },
+        body:JSON.stringify(payload)
+      }
     );
 
-    if(blob.size>50*1024*1024){
-      throw new Error(
-        "PDFが50MBを超えています。文章量を減らしてください。"
-      );
+    const data=await response.json();
+
+    if(!response.ok || !data.storage_url){
+      throw new Error(data.message || data.error || "PDF生成に失敗しました");
     }
 
-    const storageURL=await uploadPDF(blob);
+    if(!/^https:\/\/aisenseapi\.com\/services\/v1\/storage\/[a-f0-9-]+$/i.test(data.storage_url)){
+      throw new Error("返されたPDFのURLが正しくありません");
+    }
 
     const viewerURL=
       location.origin+
-      location.pathname.replace(/index\.html$/,"")+
-      "viewer.html?url="+
-      encodeURIComponent(storageURL);
+      location.pathname.replace(/index\.html$/,"").replace(/\/?$/,"/")+
+      "viewer.html?url="+encodeURIComponent(data.storage_url);
 
-    urlField.value=viewerURL;
-    urlField.style.display="block";
-    copyButton.style.display="block";
+    resultBox.innerHTML="";
+    const title=document.createElement("strong");
+    title.textContent="PDFができました";
 
-    status(
-      "PDFが完成しました。\n\n"+
-      "ページ数："+result.pageCount+"\n"+
-      "入力文字数："+originalText.length+"\n"+
-      "ファイル容量："+Math.round(blob.size/1024)+"KB\n\n"+
-      "URLをコピーして共有できます。"
-    );
+    const link=document.createElement("a");
+    link.href=viewerURL;
+    link.textContent="PDFを開く・共有する";
+    link.target="_blank";
+    link.rel="noopener";
+
+    const copy=document.createElement("button");
+    copy.textContent="共有URLをコピー";
+    copy.onclick=async()=>{
+      try{
+        await navigator.clipboard.writeText(viewerURL);
+        copy.textContent="コピーしました";
+      }catch(e){
+        const area=document.createElement("textarea");
+        area.value=viewerURL;
+        document.body.appendChild(area);
+        area.select();
+        document.execCommand("copy");
+        area.remove();
+        copy.textContent="コピーしました";
+      }
+    };
+
+    resultBox.appendChild(title);
+    resultBox.appendChild(link);
+    resultBox.appendChild(copy);
+    resultBox.style.display="block";
+    status.textContent="作成が完了しました。";
 
   }catch(error){
-
-    status("エラー："+error.message);
-
+    status.textContent="エラー："+error.message;
   }finally{
-
-    createButton.disabled=false;
-
+    button.disabled=false;
+    button.textContent="PDFを作成する";
   }
-
 });
-
-copyButton.addEventListener("click",async()=>{
-
-  try{
-
-    await navigator.clipboard.writeText(urlField.value);
-
-    copyButton.textContent="コピーしました";
-
-  }catch(e){
-
-    urlField.select();
-    document.execCommand("copy");
-
-    copyButton.textContent="コピーしました";
-
-  }
-
-});
-
 </script>
-
 </body>
 </html>
